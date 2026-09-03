@@ -9,3 +9,17 @@ dist/
 .DS_Store
 report.md
 report.json
+
+# secrets - never commit
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
+# dashboard
+dashboard/api/.venv/
+dashboard/web/node_modules/
+dashboard/web/dist/
+dashboard/api/*.db
+*.tsbuildinfo

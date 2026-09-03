@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>rag-redteam: how a hidden line in a document can hijack an AI</title>
+    <meta
+      name="description"
+      content="An attacker can hide instructions in a document your AI reads and make it obey them. rag-redteam is an open-source tool that hunts for this, tested across six AI models. Try it in your browser, your API key never leaves your machine."
+    />
+
+    <!-- Link previews. Without these a shared link is a bare URL, which for a
+         page whose whole job is to be read is most of the value gone. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://srivatsa03.github.io/rag-redteam/" />
+    <meta property="og:title" content="A hidden line in a document can hijack what an AI says" />
+    <meta
+      property="og:description"
+      content="Hide a secret instruction in something an AI reads and it often just follows it. I tested this across six AI models and found the backwards part: the tricks that beat the filters are the ones that do not actually work."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="A hidden line in a document can hijack what an AI says" />
+    <meta
+      name="twitter:description"
+      content="An open-source tool that red-teams AI systems for hidden-instruction attacks, with a live demo and an in-browser scanner."
+    />
+
+    <!-- Display + mono faces: Space Grotesk for prose, JetBrains Mono for the
+         machine voice: labels, canaries, measurements. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Paper white, so the browser chrome matches the page. -->
+    <meta name="theme-color" content="#FCFCFB" />
+
+    <!-- The injected span, detected: one red-orange mark on warm charcoal. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%231E1B17'/%3E%3Crect x='6' y='14' width='20' height='5' rx='1' fill='%23FF5330'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,5 +1,9 @@
 # RAG security benchmark
 
+> Rates in this file are point estimates from 300-payload runs, and per-obfuscation cells are 32 to
+> 45 trials each. [`FINDINGS.md`](FINDINGS.md) carries 95% intervals inline, and
+> `python scripts/mechanisms.py` prints them for any run in `dashboard/data`.
+
 ## Defenses on a real model, 300 sampled payloads per probe (2026-08-10)
 
 **Model:** OpenAI `gpt-4o-mini` · **Adapter:** `examples/openai_target.py` · **Trials:** 300 per
@@ -68,9 +72,11 @@ probe, same 300 payloads, same `gpt-4o-mini`, each with its own real retriever:
 The encodings are 0% on all four, and the legible perturbations work on all four. The
 evasion-comprehension tension is a property of the attack class, not of one adapter.
 
-**Real retrieval makes injection more effective, not less.** The prediction going in was the
-opposite: a top-k retriever sometimes fails to surface the poisoned document, so attack success
-should fall. Every framework came in above the return-everything adapter, 42% to 48% against 38%.
+**Real retrieval did not make injection less effective, and on two of three stacks made it more
+effective.** The prediction going in was the opposite: a top-k retriever sometimes fails to surface
+the poisoned document, so attack success should fall. Every framework came in above the
+return-everything adapter, 42% to 48% against 38%, though only LangChain and Haystack by more than
+sampling noise (Fisher's exact test, p = 0.03 and 0.01; LlamaIndex p = 0.32).
 The likely reason is that returning the whole corpus *dilutes* the payload among benign documents,
 while a retriever ranks a distinctive poisoned document highly and hands the model a short context
 in which it is prominent. Retrieval concentrates the attack.
@@ -129,8 +135,9 @@ Indirect prompt injection, 300 sampled payloads, **undefended** pipeline, by obf
 
 `gpt-5.6-terra` is by far the hardest model here to inject, less than half the rate of
 `gpt-4o-mini`, and it is the only one in the set that obeys **every** encoding tested. It is the
-sole model that acts on rot13 and on reversed text. `gpt-5.1` is the only one that acts on base64
-at any real rate.
+only model that obeyed rot13 or reversed text in this sample (3 of 35 and 2 of 40), though against
+the other models' zeros that gap is within sampling noise (p = 0.24 and 0.49). `gpt-5.1` is the
+only one that acts on base64 at any real rate.
 
 Two trends run in opposite directions. Alignment lowers how often any given payload lands.
 Capability raises how many *kinds* of payload can land at all, because acting on an instruction
@@ -145,7 +152,7 @@ filter was written and become live as models improve. Filter coverage is measure
 moving target moving away from it.
 
 Concretely: `SanitizeInstructions` evades measured on `gpt-4o-mini` say base64 is its worst
-weakness at 57% evasion. On `gpt-4o-mini` that weakness costs nothing, because base64 payloads
+weakness at 62% evasion. On `gpt-4o-mini` that weakness costs nothing, because base64 payloads
 succeed 0% of the time. On `gpt-5.6-terra` the same gap is a live hole. **Nothing about the
 filter changed; the model did.**
 
@@ -161,18 +168,21 @@ actually breaks the defended pipeline:
 
 | obfuscation | evades the filter | breaks the pipeline |
 |---|---:|---:|
-| reversed | 57% | **0%** |
-| base64 | 57% | **0%** |
-| rot13 | 41% | **0%** |
-| homoglyph | 33% | 16% |
-| zero-width | 24% | 9% |
-| spaced | 21% | 21% |
-| uppercase | 9% | **30%** |
-| none | 2% | 14% |
+| base64 | 62% [47-76%] | **0%** [0-7.9%] |
+| reversed | 52% [36-68%] | **0%** [0-8.8%] |
+| rot13 | 46% [29-63%] | **0%** [0-10%] |
+| homoglyph | 22% [9.3-40%] | 16% [5.3-33%] |
+| spaced | 21% [9.6-37%] | 21% [9.6-37%] |
+| zero-width | 20% [8.4-37%] | 9% [1.8-23%] |
+| none | 10% [2.7-23%] | 14% [5.4-29%] |
+| uppercase | 3% [0.1-16%] | **30%** [16-49%] |
 
-The correlation is **-0.79**. The encodings that most reliably defeat the pattern matcher are the
-ones that never work, and the best attack in the sample is plain uppercase, which the filter
-catches 91% of the time but which succeeds more than twice as often as an unobfuscated payload.
+*Both columns come from the same 300 payloads, 32 to 45 per row; brackets are 95% intervals.*
+
+The rank correlation is **-0.78** (p ≈ 0.03). The encodings that most reliably defeat the pattern matcher are the
+ones that never work, and the highest success rate in the sample belongs to plain uppercase,
+which the filter catches 97% of the time. Its lead over an unobfuscated payload (30% against 14%)
+is within sampling noise, p = 0.15.
 
 The reason is that an encoding strong enough to hide an instruction from a regex is also strong
 enough to hide it from the model. `gpt-4o-mini` does not decode base64 and then obey it. What

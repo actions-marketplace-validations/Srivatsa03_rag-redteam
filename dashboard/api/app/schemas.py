@@ -73,3 +73,50 @@ class CompareCell(BaseModel):
     label: str
     rows: list[ObfuscationRow]
     overall_asr: float
+
+
+class Rate(BaseModel):
+    """A measured rate with the counts behind it and its 95% interval."""
+
+    attempts: int
+    successes: int
+    asr: float
+    # Exact Clopper-Pearson, computed with the scanner's own function when it is
+    # installed. None rather than a guess when it is not.
+    ci: list[float] | None = None
+
+
+class LeaderboardRow(BaseModel):
+    model: str
+    slug: str = ""
+    runs: int = 1
+    provider: str
+    date: str
+    tool_version: str
+    protocol: str
+    undefended: Rate
+    defended: Rate | None = None
+    utility: Rate | None = None
+
+
+class Leaderboard(BaseModel):
+    protocol: dict
+    rows: list[LeaderboardRow]
+
+
+class ObfuscationRates(BaseModel):
+    obfuscation: str
+    undefended: Rate
+    defended: Rate | None = None
+
+
+class ModelPage(BaseModel):
+    """Everything recorded for one model under Model Watch."""
+
+    model: str
+    slug: str
+    provider: str
+    protocol: dict
+    latest: LeaderboardRow
+    history: list[LeaderboardRow]  # oldest first
+    by_obfuscation: list[ObfuscationRates]  # from the latest run

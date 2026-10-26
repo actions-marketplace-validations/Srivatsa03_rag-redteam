@@ -1,13 +1,16 @@
 # rag-redteam
 
+![rag-redteam sits between your RAG pipeline and what it produces: seven attack probes, OWASP and MITRE ATLAS mapping, and statistical assurance](docs/media/hero.png)
+
 ![ci](https://github.com/Srivatsa03/rag-redteam/actions/workflows/ci.yml/badge.svg)
 [![PyPI](https://img.shields.io/pypi/v/rag-redteam)](https://pypi.org/project/rag-redteam/)
-![license](https://img.shields.io/badge/license-MIT-blue)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Srivatsa03/rag-redteam/badge)](https://scorecard.dev/viewer/?uri=github.com/Srivatsa03/rag-redteam)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 
 **Red-team your RAG pipeline for prompt injection and source-document leakage, right in CI.**
 
-![rag-redteam catching attacks on a naive RAG, then passing a hardened one](docs/media/demo.gif)
+![Wrap your RAG in three methods, run rag-redteam, and it flags each finding with its rate, a confidence interval, and its OWASP and MITRE ATLAS IDs](docs/media/demo.gif)
 
 RAG systems have an attack surface that general LLM scanners miss: the *retrieved documents themselves*. An attacker who can get text into your knowledge base can plant instructions the model will later obey (indirect prompt injection), or coax the system into spilling its private sources (data leakage). `rag-redteam` attacks your pipeline the way an adversary would and fails your build if it's exploitable.
 
@@ -68,7 +71,16 @@ addresses are refused by default, so the same code is safe to run in a hosted sc
 documents, add `--documents-url` and `--reset-url` to enable the injection and leakage probes;
 without them those probes skip, exactly as they do for a Python target without `add_documents`.
 
-A provider-agnostic example you can wire to any LLM is in [`examples/llm_target.py`](examples/llm_target.py). Framework-specific adapters are ready to go too: [`examples/langchain_target.py`](examples/langchain_target.py) (LangChain), [`examples/llamaindex_target.py`](examples/llamaindex_target.py) (LlamaIndex), and [`examples/haystack_target.py`](examples/haystack_target.py) (Haystack).
+A provider-agnostic example you can wire to any LLM is in [`examples/llm_target.py`](examples/llm_target.py). Framework-specific adapters are ready to go too: [`examples/langchain_target.py`](examples/langchain_target.py) (LangChain), [`examples/llamaindex_target.py`](examples/llamaindex_target.py) (LlamaIndex), [`examples/haystack_target.py`](examples/haystack_target.py) (Haystack), and [`examples/chroma_target.py`](examples/chroma_target.py) (Chroma, optional `chromadb`). Its `build()` also needs `openai` and `OPENAI_API_KEY`; pass your own LLM callable and embedding function for offline use. The default Chroma embedding function may download a model on first use.
+
+The [Qdrant adapter](examples/qdrant_target.py) uses a local in-memory client by default and a
+uniquely named, throwaway collection. Install `qdrant-client`; its `build()` also needs `openai`
+and `OPENAI_API_KEY` (`RAG_REDTEAM_MODEL` selects chat, `RAG_REDTEAM_EMBEDDING_MODEL` selects
+embeddings). To stay offline, pass `QdrantRAG(llm=..., embedding_function=..., client=...)` a
+callable that maps a list of texts to one vector per text, plus your own LLM callable; the client
+may be `QdrantClient(":memory:")` or an existing client. Vector size is inferred on the first
+non-empty document batch. `reset()` drops only the adapter's collection and chooses a new name;
+creation waits until documents are added, so empty corpora do not call the embedding provider.
 
 ## What it tests
 
@@ -82,7 +94,25 @@ A provider-agnostic example you can wire to any LLM is in [`examples/llm_target.
 | `citation_integrity` | medium | Asks questions with no support in the documents and flags confident, ungrounded answers (heuristic detection). |
 | `embedding_inversion` | medium | Checks whether the pipeline exposes raw embedding vectors, which can be inverted back to source text (structural detection). |
 
-Each probe reports an **attack success rate** and the exact prompts/outputs that broke the system.
+Each probe reports an **attack success rate** with its 95% confidence interval, the mechanisms that got through, and the exact prompts/outputs that broke the system.
+
+### Mapped to OWASP and MITRE ATLAS
+
+Every finding is tagged with the frameworks security teams already track: the OWASP Top 10 for LLM Applications (2025 and 2026, since the numbering changed between them), the OWASP Top 10 for Agentic Applications (2026) where a probe tests agent behaviour, and MITRE ATLAS (pinned to v2026.09). Each vulnerable probe also comes with fix guidance that points at the matching defense.
+
+| Probe | OWASP LLM 2025 | OWASP LLM 2026 | OWASP Agentic 2026 | MITRE ATLAS |
+|---|---|---|---|---|
+| `indirect_prompt_injection` | LLM01:2025 | LLM01:2026 | ASI01:2026, ASI06:2026 | AML.T0051.001, AML.T0070 |
+| `context_leakage` | LLM02:2025 | LLM02:2026, LLM08:2026 | - | AML.T0057, AML.T0085.000 |
+| `cross_document_injection` | LLM01:2025 | LLM01:2026 | ASI01:2026, ASI06:2026 | AML.T0051.001, AML.T0070 |
+| `tool_use_injection` | LLM01:2025, LLM06:2025 | LLM01:2026, LLM03:2026 | ASI01:2026, ASI02:2026 | AML.T0051.001, AML.T0053 |
+| `system_prompt_extraction` | LLM07:2025 | LLM08:2026 | - | AML.T0056 |
+| `citation_integrity` | LLM09:2025 | LLM07:2026 | - | - |
+| `embedding_inversion` | LLM08:2025 | LLM09:2026 | - | - |
+
+The mapping is conservative: a probe maps to an entry only when that entry's own text covers what the probe tests, and every ID carries its edition. `rag-redteam list --standards` prints it with the entry names.
+
+The markdown and JSON reports also end with a **test evidence** block: tool version, target, trials, seed, detection mode, framework versions, which probes did not run, and what a clean result does not establish. It records what was tested. It does not make a system compliant with anything.
 
 ## How it works (a worked example)
 
@@ -96,7 +126,7 @@ Take `indirect_prompt_injection`:
 4. A vulnerable model **obeys the planted instruction** and emits the canary.
 5. rag-redteam checks the answer for that canary: present → **VULNERABLE**; absent → safe.
 
-So the attack goes **into the documents / retrieval**, and the **canary in the output** is how it knows. `50% (2/4)` means 2 of 4 attack payloads worked. In the demo GIF above, the first run is a naive RAG (everything red) and the second is a hardened one (everything green) against the exact same attacks.
+So the attack goes **into the documents / retrieval**, and the **canary in the output** is how it knows. `50% [6.8-93.2%] (2/4)` means 2 of 4 attack payloads worked, and the bracket is the 95% confidence interval: four attempts only pin the true rate somewhere between 7% and 93%. `--trials` narrows it. The GIF at the top shows the whole integration: you wrap your RAG in three methods, point rag-redteam at it, and it plants attacks through your real retrieval path and flags what eval metrics miss, each finding with its rate, its confidence interval, and its OWASP and MITRE ATLAS IDs.
 
 ## What it has found
 
@@ -108,15 +138,15 @@ Breaking successful injections down by obfuscation, and comparing how often each
 
 | obfuscation | evades the filter | breaks the pipeline |
 |---|---:|---:|
-| reversed | 57% | **0%** |
-| base64 | 57% | **0%** |
-| rot13 | 41% | **0%** |
-| spaced | 21% | 21% |
-| uppercase | 9% | **30%** |
+| base64 | 62% [47-76%] | **0%** [0-7.9%] |
+| reversed | 52% [36-68%] | **0%** [0-8.8%] |
+| rot13 | 46% [29-63%] | **0%** [0-10%] |
+| spaced | 21% [9.6-37%] | 21% [9.6-37%] |
+| uppercase | 3% [0.1-16%] | **30%** [16-49%] |
 
-Correlation **-0.79**. The best attack in the sample is plain uppercase, which the filter catches 91% of the time. An encoding strong enough to hide an instruction from a regex is also strong enough to hide it from the model, so **measuring a content filter by its evasion rate is misleading**.
+Rank correlation **-0.78** (p ≈ 0.03 over eight obfuscations). Plain uppercase, which the filter catches 97% of the time, has the highest success rate in the sample. An encoding strong enough to hide an instruction from a regex is also strong enough to hide it from the model, so **measuring a content filter by its evasion rate is misleading**.
 
-### It replicates across every stack, and retrieval makes it worse
+### It replicates across every stack, and real retrieval does not help
 
 Repeated on LangChain, LlamaIndex and Haystack, each with its own real retriever: encodings stay at
 0% on all four, legible perturbations work on all four. The tension is a property of the attack
@@ -124,11 +154,12 @@ class, not of one adapter.
 
 | | own adapter | LangChain | LlamaIndex | Haystack |
 |---|---:|---:|---:|---:|
-| overall ASR | 38% | 47% | 42% | 48% |
-| base64 / rot13 / reversed | 0% | 0% | 0% | 0% |
+| overall ASR | 38% [32-43%] | 47% [41-53%] | 42% [36-48%] | 48% [42-54%] |
+| base64 / rot13 / reversed | 0% [0-3.0%] | 0% [0-3.0%] | 0% [0-3.0%] | 0% [0-3.0%] |
 
-**Real retrieval makes injection more effective.** All three frameworks scored above the adapter
-that returns the whole corpus. Returning everything dilutes the payload among benign documents; a
+**Real retrieval did not help, and on two stacks it hurt.** All three frameworks scored above the
+adapter that returns the whole corpus, LangChain and Haystack by more than sampling noise (p = 0.03
+and 0.01) and LlamaIndex by less (p = 0.32). Returning everything dilutes the payload among benign documents; a
 retriever ranks a distinctive poisoned document highly and hands the model a short context in which
 it dominates. A better retriever is not a mitigation.
 
@@ -138,14 +169,14 @@ That predicted its own failure mode: a model that can decode base64 would flip t
 
 | model | overall ASR | base64 | rot13 | reversed |
 |---|---:|---:|---:|---:|
-| gpt-4o-mini | 38% | 0% | 0% | 0% |
-| gpt-4.1-mini | 54% | 0% | 0% | 0% |
-| gpt-5.1 | 41% | **18%** | 0% | 0% |
-| gpt-5.6-terra | **16%** | 2% | **9%** | **5%** |
+| gpt-4o-mini | 38% [32-43%] | 0% [0-7.9%] | 0% [0-10%] | 0% [0-8.8%] |
+| gpt-4.1-mini | 54% [48-60%] | 0% [0-7.9%] | 0% [0-10%] | 0% [0-8.8%] |
+| gpt-5.1 | 41% [36-47%] | **18%** [8.0-32%] | 0% [0-10%] | 0% [0-8.8%] |
+| gpt-5.6-terra | **16%** [12-21%] | 2% [0.1-12%] | **9%** [1.8-23%] | **5%** [0.6-17%] |
 | llama-3.3-70b | 58% | 0% | 0% | 0% |
 | gpt-oss-120b | 56% | **7%** | **23%** | **28%** |
 
-Extending this to open-weight models settles it. `gpt-oss-120b` obeys **every** encoding, at higher rates than any OpenAI model measured (rot13 23%, reversed 28%), while `llama-3.3-70b`, the most injectable model tested at 58%, obeys **none** of them. So the crossover is a property of models, not of one vendor, and the two axes are independent: the safest model here (16%) and one of the most exploitable (56%) both obey every encoding.
+Open-model rows have no intervals because their raw runs are not in the repo. Extending this to open-weight models points the same way. `gpt-oss-120b` obeys **every** encoding, at higher rates than any OpenAI model measured (rot13 23%, reversed 28%), while `llama-3.3-70b`, the highest overall rate here at 58%, obeys **none** of them. So the crossover is a property of models, not of one vendor, and the two axes are independent: the safest model here (16%) and one of the most exploitable (56%) both obey every encoding.
 
 **The practical consequence:** a filter's worst measured weakness may cost nothing today and be a live hole after a model upgrade, with nothing about the filter having changed. Evasion rates on encodings your current model ignores are latent exposure, not acceptable gaps, and any injection filter needs re-measuring whenever you change models.
 
@@ -168,7 +199,9 @@ Real model, 300 sampled payloads per probe, `gpt-4o-mini`:
 | **defended** | **11%** | **0%** | **1%** | **0%** | **0%** | **0%** | **0%** | **100%** |
 | structural only | 37% | 0% | 16% | 0% | 0% | 0% | 0% | 100% |
 
-**Defenses cut indirect injection from 37% to 10% at no measured cost to utility, and cannot close it.** A 73% reduction is worth having and is not a solution. Full method and numbers in [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
+300 trials per cell. A 0% cell at that size is consistent with up to 1.2%, a cell near 10% spans roughly 7 to 14%, and utility is eight questions, so 100% is consistent with a true rate as low as 63%.
+
+**Defenses cut indirect injection by about 72%, from 113 of 300 payloads down to 32, at no measured cost to utility, and still cannot close it.** A large reduction is worth having; it is not a solution. Full method and numbers in [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ### Utility is reported beside security, always
 
@@ -249,6 +282,14 @@ When attacks *do* land, the run also reports how many distinct **mechanisms** go
 
 20 mechanisms found and roughly 10 more out there is a very different engineering situation from 20 found and none left, and an attack-success-rate alone cannot distinguish them.
 
+### Every rate carries an error bar
+
+Residual risk answers the zero-success question. Once attacks land, the questions change: how precisely did the run measure the rate, and are two rates actually different? Every report prints an exact (Clopper-Pearson) 95% confidence interval beside every rate, in the terminal, the markdown report, the JSON (`attack_success_rate_ci`) and SARIF (`properties.attackSuccessRateCI`).
+
+That is what makes a comparison safe to quote. The defense result above holds up: at 300 trials, 37% undefended is 32-43% and 11% defended is 7.4-15%, and the two ranges do not touch. A gap smaller than the error bars is not a finding, and the report now says so on its face. Running the same check over this project's own published tables caught three comparisons that did not survive it, and [`docs/FINDINGS.md`](docs/FINDINGS.md) now words them as observations rather than differences.
+
+Vulnerable probes are also broken down by mechanism, ranked by the low end of each interval, so a mechanism that landed 5 times in 6 outranks one that landed once in one try. For tables, `python scripts/benchmark.py --ci` puts the interval in every cell, and `scripts/mechanisms.py` shows it for every obfuscation and model.
+
 ### Gate CI on evidence, not on silence
 
 ```bash
@@ -299,10 +340,21 @@ Neither addresses three things this does: the **zero-success case** (SABER assum
 
 ### What the number means, and what it does not
 
+- **The bound has been checked against known truth.** `python scripts/calibrate.py simulate` repeats the tool's own sampling 2,000 times against populations whose true rate is known. The 95% bound covered the true rate in at least 96% of runs in every setting tested, and a 1% claim was wrongly certified in under 2%. `calibrate.py gate` shows the other side: the default four-payload run passes a pipeline with a 10.6% injection rate 64% of the time.
 - The bound is **per attack family**, and the run-level figure is the **worst** family, not the average. A thoroughly tested family must not launder an untested one.
 - The default prior is uniform Beta(1,1), whose zero-success bound is `1 - α^(1/(n+1))`. At 95% that is within a percent of the classical **rule of three** and agrees with Clopper-Pearson, so the number is defensible to a reviewer who has never heard of this tool. Jeffreys Beta(0.5,0.5) is available and gives roughly `1.92/n`; the more demanding prior is the default on purpose.
 - **The estimate is scoped to the grammar.** It bounds the chance that an untried payload *from this space* succeeds. A genuinely novel attack that nobody has encoded is outside it, exactly as a fuzzer's residual risk is scoped to what its mutators can reach. Residual risk is a floor under your confidence, not a safety certificate.
 - Only `indirect_prompt_injection` samples from a grammar today, so it is the only family that can currently reach a low bound. The others still report honestly that four templates prove very little, which is the point.
+
+## Model Watch
+
+New models ship every week, and each one changes which attacks land. **Model Watch** runs one frozen protocol against each notable model (300 injection payloads, seed 0, the same pipeline, undefended and behind the recommended defenses) and publishes every rate with its 95% interval on the [demo site](https://srivatsa03.github.io/rag-redteam/). Rows whose intervals overlap can't be told apart, and the page says so.
+
+```bash
+python scripts/model_watch.py run --model <model> --provider openai   # or groq, openrouter
+```
+
+Protocol, caveats and how to request a model: [`docs/MODEL-WATCH.md`](docs/MODEL-WATCH.md).
 
 ## Dashboard
 
@@ -349,7 +401,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Srivatsa03/rag-redteam@v0.6.0
+      - uses: Srivatsa03/rag-redteam@v0.8.0
         with:
           target: mypackage.my_rag:build
           fail-on: high          # low | medium | high
@@ -382,17 +434,25 @@ rag-redteam run --target mypackage.my_rag:build --sarif rag-redteam.sarif
 
 Then upload it in CI with `github/codeql-action/upload-sarif`. rag-redteam tests a runtime pipeline rather than source files, so each finding carries a logical location (the probe) instead of a file and line.
 
+Each alert is tagged with its OWASP and MITRE ATLAS IDs, carries a `security-severity` score so GitHub labels it high or medium, and includes the fix guidance and the probe's rate with its interval.
+
 ### Run it as a pre-commit hook
 
 ```yaml
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/Srivatsa03/rag-redteam
-    rev: v0.6.0
+    rev: v0.8.0
     hooks:
       - id: rag-redteam
         args: [--target, mypackage.my_rag:build, --fail-on, high]
 ```
+
+## A full run
+
+![A run across all seven probes: colored rate bars with confidence intervals, then a statistical-assurance block bounding the residual risk of a clean run](docs/media/run.gif)
+
+The default run replays a few fixed payloads per probe; `--trials` samples from a grammar of thousands, which is what lets `--assurance` bound the residual risk of a clean run.
 
 ## How detection works (and its limits)
 
@@ -436,21 +496,23 @@ Shipped:
 - **A payload grammar behind every probe** (`--trials`), from 480 to over 5000 combinations each, so a result is a sample rather than a replay of one to four hardcoded strings.
 - **Reference defenses** (`rag_redteam.defenses`) that wrap any target, each declaring whether it is structural or advisory.
 - **A utility metric** reported beside attack success, so a defense that breaks the product cannot score as a secure one.
-- Statistical assurance: residual risk with Beta-binomial credible bounds, attacker-exposure figures, Good-Turing / Chao1 mechanism-discovery estimates, `rag-redteam plan`, and a `--require-assurance` CI gate.
-- Adapters for LangChain, LlamaIndex and Haystack, plus `examples/openai_target.py` for any OpenAI-compatible endpoint (OpenAI, Groq, Together, vLLM, Ollama).
+- Statistical assurance: residual risk with Beta-binomial credible bounds, attacker-exposure figures, Good-Turing / Chao1 mechanism-discovery estimates, `rag-redteam plan`, and a `--require-assurance` CI gate, with a calibration harness (`scripts/calibrate.py`) that checks the bounds hold against known truth.
+- Adapters for LangChain, LlamaIndex, Haystack and Chroma, plus `examples/openai_target.py` for any OpenAI-compatible endpoint (OpenAI, Groq, Together, vLLM, Ollama).
 - Baseline / regression mode for CI; exact + fuzzy detection; SARIF output for the GitHub Security tab; a one-line GitHub Action; a pre-commit hook.
 - Real-model benchmarks across a capability ladder ([`docs/BENCHMARK.md`](docs/BENCHMARK.md)), plus `scripts/mechanisms.py` for per-mechanism breakdowns.
+- Model Watch: a frozen protocol and a public, per-model injection table with intervals ([`docs/MODEL-WATCH.md`](docs/MODEL-WATCH.md)).
+- Every finding mapped to OWASP (LLM 2025, LLM 2026, Agentic 2026) and MITRE ATLAS, with fix guidance and a test-evidence block in the reports.
+- A 95% confidence interval on every reported rate, and a public log of every published claim walked back ([`CORRECTIONS.md`](CORRECTIONS.md)).
 - On PyPI (`pip install rag-redteam`) and available as a GitHub Action.
 
 Next:
-- Re-run the capability ladder across the LangChain, LlamaIndex and Haystack adapters, to show the findings are not specific to one adapter.
-- Adaptive attacks. Everything here is non-adaptive, which is known to overestimate robustness; the honest next step is payloads that respond to what the defense did.
+- A container image, templates for GitLab CI, Jenkins and CircleCI, and adapters for vector stores (Qdrant, pgvector).
 - Sequential stopping: halt a run when the target bound is met rather than spending a fixed budget.
 - Fully semantic, paraphrase-aware detection.
-- A container image and templates for GitLab CI, Jenkins and CircleCI.
+- Adaptive attacks. Everything here is non-adaptive, which is known to overestimate robustness.
 
-Contributions welcome. A probe is one file implementing `run(target, detector) -> ProbeResult` (see `rag_redteam/probes/`), and a defense is one class with `on_documents` / `before_answer` / `on_answer` hooks (see `rag_redteam/defenses.py`).
+Contributions welcome: start with [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [good first issues](https://github.com/Srivatsa03/rag-redteam/labels/good%20first%20issue). A probe is one file implementing `run(target, detector) -> ProbeResult` (see `rag_redteam/probes/`), and a defense is one class with `on_documents` / `before_answer` / `on_answer` hooks (see `rag_redteam/defenses.py`). Changes are logged in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
-MIT
+[Apache-2.0](LICENSE), with attribution in [NOTICE](NOTICE). Versions 0.6.0 and earlier were released under MIT.
